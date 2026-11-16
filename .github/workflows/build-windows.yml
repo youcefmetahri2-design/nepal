@@ -1,0 +1,54 @@
+name: Build NetScreen AI Auto Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: Download scrcpy
+        shell: pwsh
+        run: |
+          $release = Invoke-RestMethod `
+            -Uri "https://api.github.com/repos/Genymobile/scrcpy/releases/latest"
+          $asset = $release.assets |
+            Where-Object { $_.name -match "win64.*\.zip$" } |
+            Select-Object -First 1
+          if (-not $asset) { throw "scrcpy Windows ZIP not found" }
+          Invoke-WebRequest $asset.browser_download_url -OutFile scrcpy.zip
+          Expand-Archive scrcpy.zip -DestinationPath scrcpy-temp
+          $folder = Get-ChildItem scrcpy-temp -Directory | Select-Object -First 1
+          New-Item -ItemType Directory -Force -Path scrcpy | Out-Null
+          Copy-Item "$($folder.FullName)\*" scrcpy -Recurse -Force
+
+      - name: Build EXE
+        run: pyinstaller --noconfirm --onefile --windowed --name NetScreenAI netscreen_ai.py
+
+      - name: Prepare package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force package
+          Copy-Item dist/NetScreenAI.exe package/
+          Copy-Item scrcpy package/scrcpy -Recurse
+          Copy-Item README_FIRST.txt package/
+
+      - name: Upload EXE package
+        uses: actions/upload-artifact@v4
+        with:
+          name: NetScreen_AI-Auto-Windows
+          path: package/
